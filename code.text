@@ -1,0 +1,489 @@
+// admin
+public interface AdminFunctions {
+    public void showSellers();
+
+    public void showAllOrderRequest();
+
+    public void updateOrderRequestStatus(String orderId,OrderStatus status);
+
+
+    public void acceptSeller(Seller seller);
+
+    public void acceptOrder(OrderRequest request);
+
+    public Seller createSeller();
+
+    public void processCurrentOrder();
+
+
+
+
+}
+
+@Data
+public class Admin implements AdminFunctions{
+    private List<Seller> sellerList = new ArrayList<>();
+    private Queue<OrderRequest> currentRequest = new LinkedList<>();
+    private List<OrderRequest> requests = new ArrayList<>();
+    private HashMap<String,OrderStatus> orderTrack = new HashMap<>();
+
+    private int seller_count = 0;
+
+    @Override
+    public void showSellers() {
+        System.out.println(sellerList);
+    }
+
+
+
+    @Override
+    public void showAllOrderRequest() {
+        System.out.println(requests);
+        for(OrderRequest request : requests){
+             showRequest(request);
+        }
+    }
+
+    private void showRequest(OrderRequest request) {
+        System.out.println("********************************************************************************");
+        System.out.println("orderId = " + request.getOrderRequestId());
+        System.out.println("order = " + request.getOrder());
+        System.out.println("user name = " + request.getUser().getUsername());
+        System.out.println("user address =" + request.getUser().getAddress().getAddress());
+        System.out.println("Applied Coupon =" + request.getCouponsApplied());
+        System.out.println("Additional Notes =" + request.getNote());
+
+        System.out.println("********************************************************************************");
+    }
+
+    @Override
+    public void updateOrderRequestStatus(String orderId  , OrderStatus status) {
+         orderTrack.put(orderId,status);
+    }
+
+    @Override
+    public void acceptSeller(Seller seller) {
+        sellerList.add(seller);
+
+    }
+
+    @Override
+    public void acceptOrder(OrderRequest request) {
+        currentRequest.add(request);
+        requests.add(request);
+    }
+
+    @Override
+    public Seller createSeller() {
+
+        Seller seller = new Seller("123"+seller_count,"avx",new Location(123,142,"abc",
+                "15012","okd","hf","fff","f3d","gff"),new ArrayList<FoodItem>());
+        seller_count = seller_count + 1;
+        return seller;
+    }
+
+    @Override
+    public void processCurrentOrder() {
+        OrderRequest request = currentRequest.poll();
+
+        double distance = calculateDistance(request.getSeller(),request.getUser());
+        int time_in_seconds =(int) distance / 10;
+
+        // Check Inventory
+        for(Order order : request.getOrder()){
+              int qty = order.getQty();
+              int inventory = order.getFoodItem().getInventory();
+              if(qty  > inventory){
+                  System.out.println("Sorry We are out of inventory ! We Are Sorry for this!");
+                  request.setOrderStatus(OrderStatus.CANCELLED_BY_SELLER);
+                  break;
+              }
+              else {
+                  // decrease the inventory
+                   order.getFoodItem().setInventory(inventory-qty);
+              }
+        }
+
+
+        // Check Total Bill and User Amount
+        if(Objects.equals(request.getOrderStatus(),OrderStatus.INITIATED_BY_USER)){
+             int total_bill = 0;
+             int savings = 0;
+
+             for(Order order : request.getOrder()){
+                  total_bill = total_bill + (order.getPrice() * order.getQty());
+
+             }
+             int final_price = total_bill;
+            System.out.println("Your Total Bill is  = "  + total_bill);
+            if(Objects.nonNull(request.getCouponsApplied())){
+                System.out.println("Congratulations! you have a coupon applied to this order !" + request.getCouponsApplied().getCouponName());
+                System.out.println("Checking  Coupon details  ... ");
+                final_price = applyCoupon(total_bill,request.getCouponsApplied());
+                System.out.println("Your Final Price is : " + final_price);
+
+                System.out.println("Your Total Saving in the Order = " + (total_bill - final_price));
+
+            }
+            if(request.getUser().getBalance() < final_price){
+                System.out.println("You are out of funds!");
+                request.setOrderStatus(OrderStatus.CANCELLED_BY_SELLER);
+            }
+            else {
+                request.setOrderStatus(OrderStatus.ACCEPTED_BY_SELLER);
+                int balance = request.getUser().getBalance();
+                int updated_balance  = balance - final_price;
+                request.getUser().setBalance(updated_balance);
+                System.out.println("Your Balance is now" + updated_balance);
+            }
+
+        }
+
+         if(Objects.equals(request.getOrderStatus(),OrderStatus.ACCEPTED_BY_SELLER)){
+             System.out.println("Your Order is Accepted By Seller and Will be Delivered To  you in " + time_in_seconds + "seconds");
+         }
+   }
+
+    public  int applyCoupon(int total, Coupon couponsApplied) {
+        int order_price = total;
+        double coupon = couponsApplied.getDiscount_percentage()/100;
+
+
+        if(order_price > couponsApplied.getMin_limit() && order_price < couponsApplied.getMax_limit()){
+             //eligible for coupon
+            System.out.println("Congratulations! we have applied " + couponsApplied.getCouponName() + "on Your Order");
+
+            double discount = coupon * order_price ;
+
+            int agreed = Math.min((int)discount,couponsApplied.getCoupon_limit());
+
+            System.out.println("Your Are eligible for a discount of " + agreed + "on your bill");
+
+            order_price = order_price - agreed;
+        }
+
+        return order_price;
+    }
+
+    public double calculateDistance(Seller seller, User user) {
+        double distance = Math.sqrt(((seller.getSeller_address().getX_coordinate() - user.getAddress().getX_coordinate()) *
+                (seller.getSeller_address().getX_coordinate() - user.getAddress().getX_coordinate())) + ((seller.getSeller_address().getY_coordinate() - user.getAddress().getY_coordinate()) *
+                (seller.getSeller_address().getY_coordinate() - user.getAddress().getY_coordinate()))
+        );
+
+        return distance;
+    }
+}
+
+@Data
+@AllArgsConstructor
+public class OrderRequest {
+    private Seller seller;
+    private String orderRequestId;
+    private List<Order> order;
+    private OrderStatus orderStatus;
+    private User user;
+    private Coupon couponsApplied;
+    private String note;
+
+}
+
+public enum OrderStatus {
+    INITIATED_BY_USER("Initiated"),
+    WAITING_FOR_ACCEPTANCE("Waiting"),
+    ACCEPTED_BY_SELLER("Accepted"),
+    COOKING("Cooking"),
+    READY_FOR_DELIVERY("Ready For Delivery"),
+    IN_TRANSIT("In Transit"),
+    SUCCESSFULLY_DELIVERED("Successfully Delivered"),
+    COOKING_TAKING_TIME("Taking Time"),
+    DELAY("DELAY"),
+    WEATHER_CONDITION("Weather Condition"),
+    DELIVERY_TAKING_TIME("Delivery Taking Time"),
+    CANCELLED_BY_SELLER("Cancelled By Seller"),
+    CANCELLED_BY_USER("Cancelled By User"),
+    REFUND_REQUESTED("Refund Requested"),
+    REFUND_SUCCESS("Refund Success"),
+    REFUND_UNSUCCESSFULL("Refund Unsuccessfull"),
+    APP_OUTAGE("App Outage"),
+    OTHER("Other");
+    private String val;
+    OrderStatus(String val){
+        this.val =val;
+    }
+
+
+    @JsonValue
+    public String getVal(){
+        return val;
+    }
+}
+
+
+// coupon management
+@Data
+@AllArgsConstructor
+public class Coupon {
+    private String couponId;
+    private String couponName;
+    private double discount_percentage;
+    private int min_limit;
+    private int max_limit;
+    private int coupon_limit;  // upto Cases
+
+}
+// item management
+public enum Category {
+    CHINESE("CHINESE"),
+    SOUTH_INDIAN("SOUTH_INDIAN"),
+    NORTH_INDIAN("NORTH_INDIAN"),
+    PURE_VEG("PURE_VEG"),
+    NON_VEG("NON_VEG"),
+    PIZZA("PIZZA"),
+    PASTA("PASTA"),
+    COFFEE("COFFEE"),
+    SANDWICH("SANDWICH");
+
+    private String val;
+    Category(String val){
+        this.val = val;
+    }
+
+    @JsonValue
+    public String getVal(){
+        return val;
+    }
+}
+
+@Data
+@AllArgsConstructor
+public class Cost {
+    private int basePrice;
+    private int packagingCharge;
+    private int taxes;
+    private int surgeCharge;
+    private int deliveryCharge;
+
+
+
+}
+@Data
+@AllArgsConstructor
+public class FoodItem {
+    // Compulsory Attributes;
+    private String itemId;
+    private int basePrice;
+    private Seller seller;
+    private Category category;
+    private String itemName;
+
+    private Cost price;
+    private int inventory;
+
+
+
+    // Not Compulsory
+    private String image;
+    private Rating rating; //  this will be used as filter
+    private int buyCount = 0; // this will be used to give Suggestions
+    private int productCategoryRank; // this will be used for enhancing the user Search Experience
+
+    public FoodItem(FoodItemBuilder foodItemBuilder){
+        this.seller = foodItemBuilder.seller;
+        this.itemId = foodItemBuilder.itemId;
+        this.basePrice = foodItemBuilder.basePrice;
+        this.category = foodItemBuilder.category;
+        this.itemName = foodItemBuilder.itemName;
+        this.price = foodItemBuilder.price;
+        this.inventory = foodItemBuilder.inventory;
+        this.image = foodItemBuilder.image;
+        this.rating = foodItemBuilder.rating;
+        this.buyCount = foodItemBuilder.buyCount;
+        this.productCategoryRank = foodItemBuilder.productCategoryRank;
+    }
+
+    // to update the buyCount
+    private void updateBuyCount(){
+         this.buyCount = this.buyCount + 1;
+    }
+
+
+    public static class FoodItemBuilder {
+
+        private String itemId;
+
+        private int basePrice;
+        private Category category;
+        private String itemName;
+        private  Seller seller;
+
+
+        private Cost price;
+        private int inventory;
+
+
+
+        // Not Compulsory
+        private String image;
+        private Rating rating; //  this will be used as filter
+        private int buyCount = 0; // this will be used to give Suggestions
+        private int productCategoryRank; // this will be used for enhancing the user Search Experience
+
+
+        public  FoodItemBuilder(String itemId ,Category category,String itemName,int inventory,int basePrice)
+        {
+             this.itemId = itemId;
+             this.category = category;
+             this.itemName = itemName;
+             this.inventory = inventory;
+             this.basePrice = basePrice;
+
+
+        }
+
+        public FoodItemBuilder addImage(String image)
+        {
+            this.image = image;
+            return this;
+        }
+
+        public FoodItemBuilder addRating(Rating rating)
+        {
+            this.rating = rating;
+            return this;
+        }
+
+        public FoodItemBuilder addProductCategoryRank(int rank){
+            this.productCategoryRank = rank;
+            return this;
+        }
+
+        public FoodItem build(){
+            return new FoodItem(this);
+        }
+
+    }
+}
+
+@Data
+public class Rating {
+    private int rating;
+    private List<Integer> recent;
+    private List<String> comments;
+
+}
+
+// order mangement
+
+@Data
+public class Order {
+    private LocalDateTime dateTime = LocalDateTime.now();
+
+    private int qty;
+    private String orderId;
+    private Seller seller;
+    private FoodItem foodItem;
+    private int price;
+
+    public  Order(int qty,String id, Seller seller,FoodItem item,Cost cost){
+        this.qty = qty;
+        this.orderId = id;
+        this.seller = seller;
+        this.foodItem = item;
+       this.price = cost.getBasePrice() + cost.getPackagingCharge() + cost.getSurgeCharge() + cost.getTaxes() + cost.getDeliveryCharge();
+    }
+
+
+@Data
+@AllArgsConstructor
+public class Seller {
+    private String sellerId;
+    private String sellerName;
+    private Location seller_address;
+    private List<FoodItem> products;
+}
+
+// user management
+@Data
+@AllArgsConstructor
+public class User {
+    private String username;
+    private String email;
+    private String password;
+
+    @NotBlank
+    @Size(min = 10,max = 10)
+    private String phoneNumber;
+    private Location address;
+    private int balance;
+    private List<Order> myOrders;
+
+}
+
+@Data
+@AllArgsConstructor
+public class Location {
+   @NotNull
+   private double x_coordinate;
+   @NotNull
+    private double y_coordinate;
+    private String country;
+    private String zipcode;
+    private String state;
+    private String city;
+    private String zone;
+    private String address;
+    private String landmark;
+}
+
+public class App 
+{
+    public static void main( String[] args )
+    {
+        Admin admin = new Admin();
+
+        Location location = new Location(11,146,"INDIA","302018",
+                "Rajasthan","Jaipur","D","p/3 gopalnagar","near hawa mahal");
+        // Create a User
+        User user = new User("avinash","avinashsoni@gmail.com","1234","1452536987",location,10000,null);
+
+        Seller seller =  admin.createSeller();
+
+        //Create food item
+        FoodItem coffee = new FoodItem.FoodItemBuilder("123", Category.COFFEE,"cold-coffee",100,80).build();
+        // Adding Food Item to Seller
+        FoodItem pizza = new FoodItem.FoodItemBuilder("1231", Category.PIZZA,"cheese-pizza",10,180).build();
+
+        List<FoodItem> products = new ArrayList<>();
+        products.add(coffee);
+        products.add(pizza);
+
+        seller.setProducts(products);
+
+        admin.acceptSeller(seller);
+
+        // Creating Order for Coffee
+
+
+        Cost cost  = new Cost(coffee.getBasePrice(),20,(int)(0.18* coffee.getBasePrice()),0,(int)(0.3 * admin.calculateDistance(seller,user)));
+
+        Order order1 = new Order(2,"1",seller,coffee,cost);
+
+        // Creating Order for Pizza
+
+        Cost cost_pizza  = new Cost(pizza.getBasePrice(),20,(int)(0.18* pizza.getBasePrice()),0,(int)(0.3 * admin.calculateDistance(seller,user)));
+
+        Order order2 = new Order(5,"2",seller,pizza,cost_pizza);
+
+        // Creating Order Request
+        // Creating Coupon
+        Coupon coupon = new Coupon("c1","C12",20,100,10000,50);
+
+        OrderRequest request = new OrderRequest(seller,"Order1", Arrays.asList(order1,order2), OrderStatus.INITIATED_BY_USER,user,coupon,"make it fast");
+
+        admin.acceptOrder(request);
+        admin.showAllOrderRequest();
+        admin.processCurrentOrder();
+
+    }
+}
